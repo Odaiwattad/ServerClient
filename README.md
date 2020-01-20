@@ -1,2 +1,0 @@
-# ServerClient
-school project
