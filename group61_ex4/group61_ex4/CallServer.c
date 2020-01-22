@@ -22,18 +22,27 @@ HANDLE ThreadHandles[NUM_OF_WORKER_THREADS];
 SOCKET ThreadInputs[NUM_OF_WORKER_THREADS];
 
 /*oOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO*/
-
-static int FindFirstUnusedThreadSlot();
-static void CleanupWorkerThreads();
-static DWORD ServiceThread(SOCKET *t_socket);
-static DWORD Check_exit_server();
-static int Accept_Socket(SOCKET *t_socket);
-/*oOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO*/
 typedef struct Parameters_to_serviceThread {
 	SOCKET ThreadInputs[NUM_OF_WORKER_THREADS];
 	char* Client_UserName;
 	int number_of_players;
-	}Client_parameters;
+}Client_parameters;
+static message message_details;
+int Get_Num_of_Message_parameters(char *AcceptedStr, message *message_details);
+void Init_Strings_parameters(message *message_details, int num_of_Params);
+static int FindFirstUnusedThreadSlot();
+static void CleanupWorkerThreads();
+static DWORD ServiceThread(Client_parameters *Client_parm);
+static DWORD Check_exit_server();
+static int Accept_Socket(SOCKET MainSocket);
+void CallServer();
+char * number_to_name(int number);
+int name_to_number(char *name);
+int CPU_Vs_Client(char *player_choice, int CPU_Move);
+
+/*oOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO*/
+
+
 void CallServer()
 {
 	Client_parameters Client_parm;
@@ -228,15 +237,15 @@ static DWORD ServiceThread(Client_parameters *Client_parm)
 	BOOL Done = FALSE;
 	TransferResult_t SendRes;
 	TransferResult_t RecvRes;
-
-
+	char *UserName = NULL;
+	int game_result;
+	int CPU_Move;
 
 	while (!Done)
 	{
 		char *AcceptedStr = NULL;
-		char Message_Type[MESSAGE_TYPE_MAX_LENGTH];
+		message msg_struct;
 		RecvRes = ReceiveString(&AcceptedStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
-		strcpy(Message_Type, Get_Message_Type(AcceptedStr));
 		if (RecvRes == TRNS_FAILED)
 		{
 			printf("Service socket error while reading, closing thread.\n");
@@ -251,29 +260,55 @@ static DWORD ServiceThread(Client_parameters *Client_parm)
 		}
 		else 
 		{
-			printf("Message Type : %s\n", Message_Type);
+			msg_struct = Get_Message_Details(AcceptedStr);
+			printf("Message Type : %s\n", msg_struct.Message_Type);
 		}
 
-		//After reading a single line, checking to see what to do with it
-		//If got "hello" send back "what's up?"
-		//If got "how are you?" send back "great"
-		//If got "bye" send back "see ya!" and then end the thread
-		//Otherwise, send "I don't understand"
-
-		if (STRINGS_ARE_EQUAL(AcceptedStr, CLIENT_REQUEST))///Here we must check if 2 Clients are already in and Deny The third Cliend 
-		{                                                  /// number of clients Connected is Client_parm->number_of_players
-			strcpy(SendStr, SERVER_APPROVED);
-			SendRes = SendString(SendStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
-			strcpy(SendStr, SERVER_MAIN_MENU);
+		if (STRINGS_ARE_EQUAL(msg_struct.Message_Type, CLIENT_REQUEST))///Here we must check if 2 Clients are already in and Deny The third Cliend 
+		{                                                 /// number of clients Connected is Client_parm->number_of_players
+			if (Client_parm->number_of_players < 2) {
+				UserName = (char*)malloc(sizeof(msg_struct.Message_parameters[0]));
+				strcpy(UserName, msg_struct.Message_parameters[0]);
+				strcpy(SendStr, SERVER_APPROVED);
+				//strcat(SendStr, "\n");
+				SendRes = SendString(SendStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
+				strcpy(SendStr, SERVER_MAIN_MENU);
+				//strcat(SendStr, "\n");
+			}
+			else
+			{
+				strcpy(SendStr, SERVER_DENIED);
+				strcat(SendStr, ":Maximum players are reached\n");	
+			}
 		}
-		else if (STRINGS_ARE_EQUAL(AcceptedStr, CLIENT_CPU ))
+		else if (STRINGS_ARE_EQUAL(msg_struct.Message_Type, CLIENT_CPU ))
 		{
-			strcpy(SendStr, "great");
+			CPU_Move= rand() % 5;
+			strcpy(SendStr, SERVER_PLAYER_MOVE_REQUEST);
+			//strcat(SendStr, "\n");
 		}
-		else if (STRINGS_ARE_EQUAL(AcceptedStr, "bye"))
-		{
-			strcpy(SendStr, "see ya!");
-			Done = TRUE;
+		else if (STRINGS_ARE_EQUAL(msg_struct.Message_Type,CLIENT_PLAYER_MOVE ))
+		{//massgeType:yourmove;OpponentUserName;OpponentMove;Winner\n
+			strcpy(SendStr, SERVER_GAME_RESULTS);
+			strcat(SendStr,":");
+			strcat(SendStr, msg_struct.Message_parameters[0]);
+			strcat(SendStr, ";Server;");
+			strcat(SendStr, number_to_name(CPU_Move));
+			game_result =CPU_Vs_Client(msg_struct.Message_parameters[0],CPU_Move);
+			switch (game_result) {
+			case -1:
+				strcpy(SendStr, "Your choice is wrong, Try again\n");
+				break;
+			case 0:
+				strcat(SendStr, "\n");
+				break;
+			case 1:
+				strcat(SendStr, "Server\n");
+				break;
+			case 2:
+				strcat(SendStr, UserName);
+				break;
+			}
 		}
 		else
 		{
@@ -290,6 +325,7 @@ static DWORD ServiceThread(Client_parameters *Client_parm)
 		}
 
 		free(AcceptedStr);
+
 	}
 
 	printf("Conversation ended.\n");
@@ -332,14 +368,129 @@ int Accept_Socket(SOCKET MainSocket) {
 		return 1;
 	}
 
-const char * Get_Message_Type(char *str) {
-	char Message_Type[MESSAGE_TYPE_MAX_LENGTH];
-	int c = 0;
-	int str_len = strlen(str);
-	while (c < str_len) {
-		Message_Type[c] = str[c];
-		c++;
+message Get_Message_Details(char *AcceptedStr) {
+	message message_details;
+	int c = 0, num_of_parameters,i=0;
+	int str_len = strlen(AcceptedStr);
+	char Char_To_Str[2];
+	Char_To_Str[1] = '\0';
+	num_of_parameters = Get_Num_of_Message_parameters(AcceptedStr,&message_details);
+	Init_Strings_parameters(&message_details,num_of_parameters);
+	while (AcceptedStr[c] != '\n') {
+		while (AcceptedStr[c] != ':')
+		{
+			message_details.Message_Type[c] = AcceptedStr[c];
+			if (AcceptedStr[c + 1]== ':' || AcceptedStr[c + 1] == '\n') {
+				message_details.Message_Type[c + 1] = '\0';
+				c++;
+				break;
+			}
+			c++;
 		}
-	Message_Type[c] = '\0';
-	return Message_Type;
+		if (AcceptedStr[c] == '\n') { break; }
+		c++;
+		while (AcceptedStr[c] != ';') {
+			Char_To_Str[0] = AcceptedStr[c];
+			strcat(message_details.Message_parameters[i], Char_To_Str);
+			if (AcceptedStr[c + 1] == ';' || AcceptedStr[c + 1] == '\n') {
+				strcat(message_details.Message_parameters[i], "");
+				c++;
+				break;
+			}
+			c++;
+		}
+		i++;
+		}
+
+	return message_details;
 }
+
+int Get_Num_of_Message_parameters(char *AcceptedStr,message * message_details)//,message *message_details) {
+{
+	int i = 0, counter = 0, allocate_memory = 1;
+	while (AcceptedStr[i]!= '\n') {
+		allocate_memory++;
+		if (AcceptedStr[i] == ':') {
+			message_details->Message_Type = (char*)malloc(sizeof(char)*allocate_memory);
+			allocate_memory = 1;
+			counter++;
+		}
+		if (AcceptedStr[i] == ';') {
+			message_details->Message_parameters[counter-1] = (char*)malloc(sizeof(char)*allocate_memory);
+			allocate_memory = 1;
+			counter++;
+		}
+		i++;
+	}
+	message_details->Message_parameters[counter - 1] = (char*)malloc(sizeof(char)*allocate_memory);
+	return counter;
+}
+
+void Init_Strings_parameters(message * message_details,int num_of_Params) {
+	int temp = num_of_Params, i = 0;
+	while (temp != 0) {
+		message_details->Message_parameters[i][0] ='\0';
+		i++;
+		temp--;
+	}
+	return;
+}
+
+char * number_to_name(int number)
+{
+	switch (number)
+	{
+	case 0: return "ROCK";
+
+	case 1: return "SPOCK";
+
+	case 2: return "PAPER";
+
+	case 3: return "LIZARD";
+		//scissors
+	case 4: return "SCISSORS";
+
+	default: return "Error";
+
+	}
+}
+
+int name_to_number(char *name)
+{
+	if (strcmp(name, "ROCK") == 0)
+		return 0;
+	if (strcmp(name, "SPOCK") == 0)
+		return 1;
+	if (strcmp(name, "PAPER") == 0)
+		return 2;
+	if (strcmp(name, "LIZARD") == 0)
+		return 3;
+	if (strcmp(name, "SCISSORS") == 0)
+		return 4;
+	else
+	{
+		printf("Error");
+		return 5;
+	}
+
+}
+
+int CPU_Vs_Client(char *player_choice,int CPU_Move)
+{
+	int player_number = name_to_number(player_choice);
+	int comp_number = CPU_Move;
+
+	printf("\nPlayer chooses : %s\n", number_to_name(player_number));
+	printf("Computer chooses : %s\n", number_to_name(comp_number));
+
+	if (player_number == 5)
+		return -1;
+	else if (comp_number == player_number)
+		return 0;
+	else if ((comp_number - player_number) % 5 < 3)
+		return 1;
+	else
+		return 2;
+
+}
+

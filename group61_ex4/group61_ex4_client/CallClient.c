@@ -8,7 +8,7 @@ Last updated by Amnon Drory, Winter 2011.
  /*oOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO*/
 
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
-
+#define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <string.h>
 #include <winsock2.h>
@@ -42,11 +42,14 @@ static DWORD RecvDataThread(char **UserName)
 			printf("Server closed connection. Bye!\n");
 			return 0x555;
 		}
-		else
+		else if (STRINGS_ARE_EQUAL(AcceptedStr, SERVER_MAIN_MENU))
 		{
-			printf("%s\n", AcceptedStr);
+			printf("print Manu tralala\n");
 		}
-
+		else if (STRINGS_ARE_EQUAL(AcceptedStr, SERVER_PLAYER_MOVE_REQUEST))
+		{
+			printf("%s",AcceptedStr);
+		}
 		free(AcceptedStr);
 	}
 
@@ -60,15 +63,17 @@ static DWORD SendDataThread(char **UserName)
 {
 	char SendStr[256];
 	TransferResult_t SendRes;
-
-	SendString(CLIENT_REQUEST, m_socket);
+	SendStr[0] = '\0';
+	strcat(SendStr, CLIENT_REQUEST);
+	strcat(SendStr, ":Odai\n");
+	SendString(SendStr, m_socket);
 	while (1)
 	{
 		gets_s(SendStr, sizeof(SendStr)); //Reading a string from the keyboard
 
 		if (STRINGS_ARE_EQUAL(SendStr, "quit"))
 			return 0x555; //"quit" signals an exit from the client side
-
+		strcat(SendStr, "\n");
 		SendRes = SendString(SendStr, m_socket);
 
 		if (SendRes == TRNS_FAILED)

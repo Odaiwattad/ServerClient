@@ -1,7 +1,2 @@
 ﻿  CallServer.c
-d:\downloads\group61_ex4\group61_ex4\callserver.c(110): warning C4047: 'function': 'SOCKET *' differs in levels of indirection from 'SOCKET'
-d:\downloads\group61_ex4\group61_ex4\callserver.c(110): warning C4024: 'Accept_Socket': different types for formal and actual parameter 1
-d:\downloads\group61_ex4\group61_ex4\callserver.c(225): warning C4028: formal parameter 1 different from declaration
-d:\downloads\group61_ex4\group61_ex4\callserver.c(310): warning C4028: formal parameter 1 different from declaration
-d:\downloads\group61_ex4\group61_ex4\callserver.c(344): warning C4172: returning address of local variable or temporary: Message_Type
   group61_ex4.vcxproj -> D:\downloads\group61_ex4\Debug\group61_ex4_server.exe
