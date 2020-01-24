@@ -1,2 +1,5 @@
 ﻿  CallServer.c
+d:\downloads\group61_ex4\group61_ex4\callserver.c(522): warning C4715: 'DealClientPlayerMove': not all control paths return a value
+d:\downloads\group61_ex4\group61_ex4\callserver.c(646): warning C4715: 'AnalayzeClientMessage': not all control paths return a value
+d:\downloads\group61_ex4\group61_ex4\callserver.c(612): warning C4716: 'DealClientVersus': must return a value
   group61_ex4.vcxproj -> D:\downloads\group61_ex4\Debug\group61_ex4_server.exe

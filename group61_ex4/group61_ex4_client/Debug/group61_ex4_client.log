@@ -1,2 +1,5 @@
 ﻿  CallClient.c
+d:\downloads\group61_ex4\group61_ex4_client\callclient.c(413): warning C4033: 'CallClient' must return a value
+d:\downloads\group61_ex4\group61_ex4_client\callclient.c(424): warning C4033: 'CallClient' must return a value
+d:\downloads\group61_ex4\group61_ex4_client\callclient.c(446): warning C4715: 'CallClient': not all control paths return a value
   group61_ex4_client.vcxproj -> D:\downloads\group61_ex4\Debug\group61_ex4_client.exe

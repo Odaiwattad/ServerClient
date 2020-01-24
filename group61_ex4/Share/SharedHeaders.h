@@ -5,14 +5,15 @@
 
 #define SERVER_ADDRESS_STR "127.0.0.1"
 #define SERVER_PORT 2345
-
+#define USERNAME_MAX_LENGTH 20
+#define MOVE_MAX_LENGTH 10
 #define STRINGS_ARE_EQUAL( Str1, Str2 ) ( strcmp( (Str1), (Str2) ) == 0 )
 #define MESSAGE_TYPE_MAX_LENGTH 20
 #define MAX_NUM_OF_PARAMETERS 6
 /*oOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO*/
 //Server Massages 
-#define SERVER_MAIN_MENU "Print Manu" 
-#define SERVER_APPROVED "Connected"
+#define SERVER_MAIN_MENU "Print Manu\n" 
+#define SERVER_APPROVED "Connected\n"
 #define SERVER_DENIED "Connection Denied"
 #define SERVER_INVITE "Invite"
 #define SERVER_PLAYER_MOVE_REQUEST "Choose Move"

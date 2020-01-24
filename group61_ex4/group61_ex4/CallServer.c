@@ -24,8 +24,13 @@ SOCKET ThreadInputs[NUM_OF_WORKER_THREADS];
 /*oOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO*/
 typedef struct Parameters_to_serviceThread {
 	SOCKET ThreadInputs[NUM_OF_WORKER_THREADS];
-	char* Client_UserName;
+	char Client_UserName[USERNAME_MAX_LENGTH];
+	char Client_OpponentName[USERNAME_MAX_LENGTH];
+	char Client_UserMove[MOVE_MAX_LENGTH];
+	int Client_OpponentMove;
 	int number_of_players;
+	int Ready_to_MultiPlayer;
+	int Last_played;
 }Client_parameters;
 static message message_details;
 int Get_Num_of_Message_parameters(char *AcceptedStr, message *message_details);
@@ -39,7 +44,8 @@ void CallServer();
 char * number_to_name(int number);
 int name_to_number(char *name);
 int CPU_Vs_Client(char *player_choice, int CPU_Move);
-
+TransferResult_t AnalayzeClientMessage(message * message_struct, Client_parameters *Client_parm,int CPU_Move);
+TransferResult_t DealClientRequest(message * message_struct, Client_parameters *Client_Parm);
 /*oOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO*/
 
 
@@ -56,7 +62,8 @@ void CallServer()
 	int ListenRes;
 	HANDLE exit_handle;
 	int Accepted;
-
+	char SendStr[256];
+	Client_parm.Ready_to_MultiPlayer = 0;
 	InitWinSock();
 
 	/* The WinSock DLL is acceptable. Proceed. */
@@ -115,7 +122,11 @@ Check_if_exit:
 			if (res == WAIT_OBJECT_0) {//debuged and working
 				CloseHandle(exit_handle);
 			}
-			goto server_cleanup_3; }
+			strcpy(SendStr, SERVER_DENIED);
+			strcat(SendStr,":Server disconnected\n");
+		//	SendString(SendStr,
+			goto server_cleanup_3; 
+		}
 		Accepted =Accept_Socket(MainSocket);
 		if (Accepted == 1) {
 			AcceptSocket = accept(MainSocket, NULL, NULL);
@@ -134,7 +145,9 @@ Check_if_exit:
 
 		if (number_of_clients_connected == NUM_OF_WORKER_THREADS) //no slot is available
 		{
+
 			printf("No slots available for client, dropping the connection.\n");
+
 			closesocket(AcceptSocket); //Closing the socket, dropping the connection.
 		}
 		else
@@ -232,15 +245,11 @@ static void CleanupWorkerThreads()
 //Service thread is the thread that opens for each successful client connection and "talks" to the client.
 static DWORD ServiceThread(Client_parameters *Client_parm)
 {
-	char SendStr[SEND_STR_SIZE];
-
 	BOOL Done = FALSE;
 	TransferResult_t SendRes;
 	TransferResult_t RecvRes;
 	char *UserName = NULL;
-	int game_result;
 	int CPU_Move;
-
 	while (!Done)
 	{
 		char *AcceptedStr = NULL;
@@ -262,60 +271,13 @@ static DWORD ServiceThread(Client_parameters *Client_parm)
 		{
 			msg_struct = Get_Message_Details(AcceptedStr);
 			printf("Message Type : %s\n", msg_struct.Message_Type);
+			free(AcceptedStr);
 		}
-
-		if (STRINGS_ARE_EQUAL(msg_struct.Message_Type, CLIENT_REQUEST))///Here we must check if 2 Clients are already in and Deny The third Cliend 
-		{                                                 /// number of clients Connected is Client_parm->number_of_players
-			if (Client_parm->number_of_players < 2) {
-				UserName = (char*)malloc(sizeof(msg_struct.Message_parameters[0]));
-				strcpy(UserName, msg_struct.Message_parameters[0]);
-				strcpy(SendStr, SERVER_APPROVED);
-				//strcat(SendStr, "\n");
-				SendRes = SendString(SendStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
-				strcpy(SendStr, SERVER_MAIN_MENU);
-				//strcat(SendStr, "\n");
-			}
-			else
-			{
-				strcpy(SendStr, SERVER_DENIED);
-				strcat(SendStr, ":Maximum players are reached\n");	
-			}
+		if (msg_struct.Message_Type == CLIENT_DISCONNECT) {
+			Done = TRUE;
 		}
-		else if (STRINGS_ARE_EQUAL(msg_struct.Message_Type, CLIENT_CPU ))
-		{
-			CPU_Move= rand() % 5;
-			strcpy(SendStr, SERVER_PLAYER_MOVE_REQUEST);
-			//strcat(SendStr, "\n");
-		}
-		else if (STRINGS_ARE_EQUAL(msg_struct.Message_Type,CLIENT_PLAYER_MOVE ))
-		{//massgeType:yourmove;OpponentUserName;OpponentMove;Winner\n
-			strcpy(SendStr, SERVER_GAME_RESULTS);
-			strcat(SendStr,":");
-			strcat(SendStr, msg_struct.Message_parameters[0]);
-			strcat(SendStr, ";Server;");
-			strcat(SendStr, number_to_name(CPU_Move));
-			game_result =CPU_Vs_Client(msg_struct.Message_parameters[0],CPU_Move);
-			switch (game_result) {
-			case -1:
-				strcpy(SendStr, "Your choice is wrong, Try again\n");
-				break;
-			case 0:
-				strcat(SendStr, "\n");
-				break;
-			case 1:
-				strcat(SendStr, "Server\n");
-				break;
-			case 2:
-				strcat(SendStr, UserName);
-				break;
-			}
-		}
-		else
-		{
-			strcpy(SendStr, "I don't understand");
-		}
-
-		SendRes = SendString(SendStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
+		CPU_Move = rand() % 5;
+		SendRes =AnalayzeClientMessage(&msg_struct, Client_parm,CPU_Move);
 
 		if (SendRes == TRNS_FAILED)
 		{
@@ -323,11 +285,7 @@ static DWORD ServiceThread(Client_parameters *Client_parm)
 			closesocket((Client_parm->ThreadInputs[Client_parm->number_of_players]));
 			return 1;
 		}
-
-		free(AcceptedStr);
-
 	}
-
 	printf("Conversation ended.\n");
 	closesocket((Client_parm->ThreadInputs[Client_parm->number_of_players]));
 	return 0;
@@ -343,6 +301,7 @@ static DWORD Check_exit_server(void) {
 		}
 	}
 }
+
 int Accept_Socket(SOCKET MainSocket) {
 	fd_set set;
 	struct timeval timeout;
@@ -451,7 +410,6 @@ char * number_to_name(int number)
 	case 4: return "SCISSORS";
 
 	default: return "Error";
-
 	}
 }
 
@@ -494,3 +452,200 @@ int CPU_Vs_Client(char *player_choice,int CPU_Move)
 
 }
 
+
+TransferResult_t DealClientRequest(message * message_struct, Client_parameters * Client_parm) {
+	char SendStr[256];
+	if (Client_parm->number_of_players < 2) {
+		strcpy(Client_parm->Client_UserName, message_struct->Message_parameters[0]);
+		strcpy(SendStr, SERVER_APPROVED);
+		strcat(SendStr, "\n");
+		SendString(SendStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
+		strcpy(SendStr, SERVER_MAIN_MENU);
+		strcat(SendStr, "\n");
+		return SendString(SendStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
+	}
+	else
+	{
+		strcpy(SendStr, SERVER_DENIED);
+		strcat(SendStr, ":Maximum players are reached\n");
+		return SendString(SendStr,(Client_parm->ThreadInputs[Client_parm->number_of_players]));
+	}
+}
+TransferResult_t DealClientMainMenu( Client_parameters * Client_parm) {
+	return SendString(SERVER_MAIN_MENU, Client_parm->ThreadInputs[Client_parm->number_of_players]);
+}
+TransferResult_t DealClientCPU(message * message_struct, Client_parameters *Client_parm,int CPU_Move) {
+	char SendStr[256];
+
+	CPU_Move = rand() % 5;
+	strcpy(Client_parm->Client_OpponentName, "Server");
+	Client_parm->Client_OpponentMove = CPU_Move;
+	strcpy(SendStr, SERVER_PLAYER_MOVE_REQUEST);
+	strcat(SendStr, "\n");
+	return SendString(SendStr,Client_parm->ThreadInputs[Client_parm->number_of_players]);
+}
+
+TransferResult_t DealClientPlayerMove(message * message_struct, Client_parameters * Client_parm, int CPU_Move) {
+	char SendStr[256];
+	int game_result;
+	strcpy(Client_parm->Client_UserMove, message_struct->Message_parameters[0]);
+	//massgeType:yourmove;OpponentUserName;OpponentMove;Winner\n
+	if (Client_parm->Client_OpponentName!=NULL) {
+		strcpy(SendStr, SERVER_GAME_RESULTS);
+		strcat(SendStr, ":");
+		strcat(SendStr, Client_parm->Client_UserMove);
+		strcat(SendStr, ";");
+		strcat(SendStr, Client_parm->Client_OpponentName);
+		strcat(SendStr, ";");
+		strcat(SendStr, number_to_name(Client_parm->Client_OpponentMove));
+		game_result = CPU_Vs_Client(Client_parm->Client_UserMove, Client_parm->Client_OpponentMove);
+		switch (game_result) {
+		case -1:
+			strcpy(SendStr, "Your choice is wrong, Try again\n");
+			break;
+		case 0:
+			strcat(SendStr, "\n");
+			break;
+		case 1:
+			strcat(SendStr, Client_parm->Client_OpponentName);
+			break;
+		case 2:
+			strcat(SendStr, Client_parm->Client_UserName);
+			strcat(SendStr, "\n");
+			break;
+		}
+		SendString(SendStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
+		strcpy(SendStr, SERVER_GAME_OVER_MENU);
+		strcat(SendStr, "\n");
+		return SendString(SendStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
+	}
+}
+
+void GetOpponentNameMove(char * str,Client_parameters * Client_parm) {
+	int i = 0, Name_Length = 0, Move_Length = 0;
+	char *OpponentMove = NULL;
+	while (str[i] != ' ') {
+		Name_Length++;
+		i++;
+	}
+	Name_Length++;
+	Client_parm->Client_OpponentName[0] = '\0';
+	strncat(Client_parm->Client_OpponentName, str, Name_Length);
+	i++;
+	while (str[i] != '\n') {
+		Move_Length++;
+		i++;
+	}
+	OpponentMove[0] = '\0';
+	str += Name_Length;
+	strncat(OpponentMove, str, Move_Length);
+	Client_parm->Client_OpponentMove = name_to_number(OpponentMove);
+	return;
+}
+
+
+TransferResult_t DealClientVersus(message * message_struct, Client_parameters * Client_parm,int CPU_Move){
+	FILE * GameSession;
+	char  SendStr[256];
+	char * AcceptedStr = NULL;
+	HANDLE mutex;
+	DWORD wait_result;
+	mutex = CreateMutex(
+		NULL,   /* default security attributes */
+		FALSE,	/* don't lock mutex immediately */
+		NULL);  /* un-named */
+	if (mutex == NULL)
+	{
+		printf("error creating Mutix\n : %d", GetLastError());
+	}
+	while (Client_parm->Ready_to_MultiPlayer!=1) {
+		wait_result = WaitForSingleObject(mutex, INFINITE);
+		GameSession = fopen("GameSession.txt", "r");
+		if (GameSession == NULL) {// File doesn't exist
+			GameSession = fopen("GameSession.txt", "w");
+			strcpy(SendStr, SERVER_PLAYER_MOVE_REQUEST);
+			strcat(SendStr, "\n");
+			SendString(SendStr, Client_parm->ThreadInputs[Client_parm->number_of_players]);
+			ReceiveString(&AcceptedStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
+			*message_struct = Get_Message_Details(AcceptedStr);
+			strcpy(Client_parm->Client_UserMove, message_struct->Message_parameters[0]);
+			fprintf(GameSession, "%s %s\n", Client_parm->Client_UserName, Client_parm->Client_UserMove);
+			Client_parm->Ready_to_MultiPlayer = -1;//Client Ready to play = -1 ( first to open file)
+			fclose(GameSession);
+			//release Mutex 
+			ReleaseMutex(mutex);
+		}
+		else if (Client_parm->Ready_to_MultiPlayer == 0) {//file exists and this is first time I try to open
+			//hold mutex 
+			strcpy(SendStr, SERVER_PLAYER_MOVE_REQUEST);
+			strcat(SendStr, "\n");
+			SendString(SendStr, Client_parm->ThreadInputs[Client_parm->number_of_players]);
+			ReceiveString(&AcceptedStr, (Client_parm->ThreadInputs[Client_parm->number_of_players]));
+			*message_struct = Get_Message_Details(AcceptedStr);
+			strcpy(Client_parm->Client_UserMove, message_struct->Message_parameters[0]);
+			if (fgets(SendStr, 256, GameSession) != NULL) {
+				GetOpponentNameMove(SendStr, Client_parm);
+				fclose(GameSession);
+			}
+			GameSession = fopen("GameSession.txt", "w");
+			fprintf(GameSession, "%s %s\n", Client_parm->Client_UserName, Client_parm->Client_UserMove);
+			fclose(GameSession);
+			Client_parm->Ready_to_MultiPlayer = 1;
+			ReleaseMutex(mutex);
+			break;
+		}
+		else if (Client_parm->Ready_to_MultiPlayer == -1) {
+			if (fgets(SendStr, 256, GameSession) != NULL) {
+				if (fgets(SendStr, 256, GameSession) != NULL) {
+					GetOpponentNameMove(SendStr, Client_parm);
+					fclose(GameSession);
+					Client_parm->Ready_to_MultiPlayer = 1;
+					ReleaseMutex(mutex);
+				}
+			}
+
+		}
+
+		//TO DO Calculate game result and send to Client
+	}
+
+}
+
+TransferResult_t AnalayzeClientMessage(message * message_struct, Client_parameters *Client_parm,int CPU_Move) {
+//	int game_result;
+	if (STRINGS_ARE_EQUAL(message_struct->Message_Type, CLIENT_REQUEST))///Here we must check if 2 Clients are already in and Deny The third Cliend 
+	{                                                 /// number of clients Connected is Client_parm->number_of_players
+		return DealClientRequest(message_struct, Client_parm);
+	}
+	else if (STRINGS_ARE_EQUAL(message_struct->Message_Type, CLIENT_MAIN_MENU)) 
+	{
+		return DealClientMainMenu(Client_parm);
+	}
+	else if (STRINGS_ARE_EQUAL(message_struct->Message_Type, CLIENT_CPU))
+	{
+		return DealClientCPU(message_struct, Client_parm,CPU_Move);
+	}
+
+	else if (STRINGS_ARE_EQUAL(message_struct->Message_Type, CLIENT_VERSUS))
+	{
+		return DealClientVersus(message_struct,Client_parm,CPU_Move);
+	}
+	else if (STRINGS_ARE_EQUAL(message_struct->Message_Type, CLIENT_PLAYER_MOVE))
+	{
+		return DealClientPlayerMove(message_struct, Client_parm, CPU_Move);
+	}
+	/*else if (STRINGS_ARE_EQUAL(message_struct->Message_Type, CLIENT_REPLAY))
+	{
+	//To DO
+		return DealClientReplay(message_struct, Client_parm);
+	}
+*/
+
+
+	
+}
+
+//if CLIENT_versus
+//check for game session file
+//if no file , create file and wait
+//if found game session file , 
